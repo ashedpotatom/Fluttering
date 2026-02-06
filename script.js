@@ -60,24 +60,26 @@ function createBoundaries() {
 const measurementCanvas = document.createElement('canvas');
 const measurementContext = measurementCanvas.getContext('2d');
 
-function getCharWidth(char, fontSize) {
+function getCharWidth(char, fontSize, spacingRatio = 0) {
     const isKorean = /[\u3131-\uD79D]/.test(char);
     const fontFamily = isKorean ? 'Noto Sans KR' : 'Gloock';
     measurementContext.font = `900 ${fontSize}px ${fontFamily}`;
 
     // Canvas measureText is very accurate. 
-    // We add a tiny buffer (1px) to prevent sub-pixel overlap issues.
-    return Math.ceil(measurementContext.measureText(char).width) + 1;
+    // Dynamic letter spacing ratio applied to English characters.
+    const baseWidth = measurementContext.measureText(char).width;
+    const letterSpacing = isKorean ? 0 : fontSize * spacingRatio;
+    return Math.ceil(baseWidth + letterSpacing) + 1;
 }
 
 // Split text into lines based on width
-function calculateLines(chars, fontSize, maxWidth) {
+function calculateLines(chars, fontSize, maxWidth, spacingRatio) {
     const lines = [];
     let currentLine = [];
     let currentWidth = 0;
 
     chars.forEach(char => {
-        const charWidth = getCharWidth(char, fontSize);
+        const charWidth = getCharWidth(char, fontSize, spacingRatio);
         if (currentWidth + charWidth > maxWidth && currentLine.length > 0) {
             lines.push(currentLine);
             currentLine = [char];
@@ -106,22 +108,29 @@ function createHangingText(text) {
     const screenWidth = window.innerWidth;
     const screenHeight = window.innerHeight;
 
-    const baseFontSize = Math.min(Math.max(32, screenWidth / 6.5), 134);
-    // Dynamic Scaling: Decrease font size as characters exceed 10
+    // Mobile base: 15.38 * 1.2 = 18.46vw. Desktop min: 9.04vw.
+    // Reduction factor for desktop (recalculated for 140% of previous state).
+    const reductionFactor = Math.max(0.49, 1 - Math.max(0, screenWidth - 600) / 1400 * 0.51);
+    const baseFontSizeVw = 18.46 * reductionFactor;
+
+    // Dynamic spacing ratio: 0.072em (MO) -> 0.084em (PC)
+    const spacingRatio = 0.072 + Math.max(0, screenWidth - 600) / 1400 * 0.012;
+
     const lengthFactor = 1 / (1 + Math.max(0, chars.length - 10) * 0.05);
-    const fontSize = Math.max(baseFontSize * lengthFactor, 24);
+    const fontSizeVw = Math.max(baseFontSizeVw * lengthFactor, 5);
+    const fontSize = (fontSizeVw * screenWidth) / 100; // Convert to pixels for physics internal calc
 
     const charHeight = fontSize * 0.85; // Tighter height for better stacking
     const textAreaPadding = screenWidth * TEXT_AREA_PADDING;
     const textAreaWidth = screenWidth - (textAreaPadding * 2);
     const lineHeight = charHeight + 110;
 
-    const lines = calculateLines(chars, fontSize, textAreaWidth);
+    const lines = calculateLines(chars, fontSize, textAreaWidth, spacingRatio);
     const totalHeight = lines.length * lineHeight;
     const startY = Math.max(ROPE_Y + charHeight + 20, (screenHeight - totalHeight) / 3.5);
 
     lines.forEach((lineChars, lineIndex) => {
-        const totalLineWidth = lineChars.reduce((sum, char) => sum + getCharWidth(char, fontSize), 0);
+        const totalLineWidth = lineChars.reduce((sum, char) => sum + getCharWidth(char, fontSize, spacingRatio), 0);
         let currentX = (screenWidth - totalLineWidth) / 2;
         const ropeY = startY + lineIndex * lineHeight - 50;
 
@@ -133,7 +142,7 @@ function createHangingText(text) {
         ropeBodies.push(ropeBody);
 
         lineChars.forEach((char) => {
-            const charWidth = getCharWidth(char, fontSize);
+            const charWidth = getCharWidth(char, fontSize, spacingRatio);
             const x = currentX + charWidth / 2;
             const y = ropeY + charHeight + 50;
 
@@ -143,7 +152,8 @@ function createHangingText(text) {
             const isKorean = /[\u3131-\uD79D]/.test(char);
             span.className = `char-span ${isKorean ? 'char-ko' : 'char-en'}`;
             span.textContent = char;
-            span.style.fontSize = `${fontSize}px`;
+            span.style.fontSize = `${fontSizeVw}vw`;
+            span.style.letterSpacing = isKorean ? '0' : `${spacingRatio}em`;
             span.style.direction = 'ltr';
             span.style.unicodeBidi = 'plaintext';
             span.style.color = '#0065FF';
@@ -266,32 +276,38 @@ function handleResize() {
     const oldCenter = (window.prevWidth || screenWidth) / 2;
     const newCenter = screenWidth / 2;
 
+    // Calculate scale factor for bodies
+    const scaleFactor = screenWidth / window.prevWidth;
+
     World.clear(world, true);
     createBoundaries();
 
     charBodies.forEach((body, i) => {
-        const offset = body.position.x - oldCenter;
-        Body.setPosition(body, { x: newCenter + offset, y: body.position.y });
+        const offset = (body.position.x - oldCenter) * scaleFactor;
+        Body.setPosition(body, { x: newCenter + offset, y: body.position.y * scaleFactor });
+        Body.scale(body, scaleFactor, scaleFactor);
         World.add(world, body);
     });
 
     ropeBodies.forEach(body => {
-        Body.setPosition(body, { x: newCenter, y: body.position.y });
+        Body.setPosition(body, { x: newCenter, y: body.position.y * scaleFactor });
+        Body.scale(body, scaleFactor, 1);
         World.add(world, body);
     });
 
     constraints.forEach(c => World.add(world, c));
 
     fallenBodies.forEach(body => {
-        const offset = body.position.x - oldCenter;
+        const offset = (body.position.x - oldCenter) * scaleFactor;
         let newX = newCenter + offset;
-        let newY = body.position.y;
+        let newY = body.position.y * scaleFactor;
 
         if (newY > screenHeight - 20) {
             newY = screenHeight - 20;
         }
 
         Body.setPosition(body, { x: newX, y: newY });
+        Body.scale(body, scaleFactor, scaleFactor);
         World.add(world, body);
     });
 
@@ -368,11 +384,11 @@ function init() {
         // Return to initial state
         createHangingText('Laundry');
     });
-    window.addEventListener('resize', debounce(handleResize, 300));
+    window.addEventListener('resize', debounce(handleResize, 20));
     input.focus();
 
     createHangingText('Laundry');
-    setInterval(applyWindEffect, 3000);
+    setInterval(applyWindEffect, 2000);
 }
 
 function applyWindEffect() {

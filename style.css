@@ -202,6 +202,11 @@ body {
         height: 36px;
         right: 6px;
     }
+
+    .char-span {
+        text-shadow: none;
+        -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.4);
+    }
 }
 
 .icon-btn:active {
