@@ -31,11 +31,61 @@ body {
     opacity: 0.8;
 }
 
-@media (max-width: 768px) {
-    #logo {
-        height: 16px;
+#sound-toggle-btn {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 5000;
+    width: 52px;
+    height: 52px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+/* ... */
+
+.submit-icon {
+    position: absolute;
+    right: 8px;
+    width: 44px;
+    /* Unify slightly smaller than main buttons */
+    height: 44px;
+    /* ... */
+}
+
+.icon-btn {
+    width: 52px;
+    /* Reduced from 56px */
+    height: 52px;
+    /* ... */
+}
+
+@media (max-width: 850px) {
+    /* ... */
+
+    #sound-toggle-btn {
         top: 16px;
-        left: 16px;
+        right: 16px;
+        width: 42px;
+        /* ~20% reduction from 52px */
+        height: 42px;
+    }
+
+    .icon-btn {
+        width: 42px;
+        /* reduced from 48px */
+        height: 42px;
+    }
+
+    .submit-icon {
+        width: 36px;
+        height: 36px;
+        right: 6px;
     }
 }
 

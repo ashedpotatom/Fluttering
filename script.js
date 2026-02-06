@@ -17,6 +17,72 @@ let ropeBodies = [];
 let fallenBodies = [];
 let fallenElements = [];
 
+// Audio Setup
+class SoundManager {
+    constructor() {
+        this.ctx = null;
+        this.initialized = false;
+        this.isMuted = false;
+    }
+
+    init() {
+        if (this.initialized) return;
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.initialized = true;
+    }
+
+    toggleMute() {
+        this.isMuted = !this.isMuted;
+        const btn = document.getElementById('sound-toggle-btn');
+        if (this.isMuted) {
+            btn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="speaker-off">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>`;
+        } else {
+            btn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="speaker-on">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>`;
+        }
+    }
+
+    playCollision(intensity, size = 100) {
+        if (!this.initialized || this.isMuted || intensity < 0.2) return;
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Adjust pitch based on size: larger = lower, smaller = higher
+        // size typical range is around 50 to 200 based on font size logic
+        osc.type = 'triangle';
+        const baseFreq = Math.max(200, 1200 - (size * 5)) + (Math.random() * 100);
+
+        osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.7, this.ctx.currentTime + 0.1);
+
+        // Volume scaled by intensity: higher intensity = louder sound
+        // Base vol range is roughly 0.01 (min) to 0.15 (max) before 30% reduction
+        const baseVol = Math.min(Math.max(intensity * 0.1, 0.02), 0.15);
+        const vol = baseVol * 0.7; // Apply 30% reduction requested earlier
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.1);
+    }
+}
+
+const sounds = new SoundManager();
+
 // Initialize Physics Engine
 function initEngine() {
     engine = Engine.create();
@@ -30,6 +96,41 @@ function initEngine() {
     // Start simulation
     const runner = Matter.Runner.create();
     Matter.Runner.run(runner, engine);
+
+    // Collision sounds
+    Matter.Events.on(engine, 'collisionStart', (event) => {
+        event.pairs.forEach(pair => {
+            const bodyA = pair.bodyA;
+            const bodyB = pair.bodyB;
+
+            // Only play sound if one of the bodies is a letter
+            const isALetter = charBodies.includes(bodyA) || fallenBodies.includes(bodyA);
+            const isBLetter = charBodies.includes(bodyB) || fallenBodies.includes(bodyB);
+
+            if (isALetter || isBLetter) {
+                const speed = Math.sqrt(
+                    Math.pow(bodyA.velocity.x - bodyB.velocity.x, 2) +
+                    Math.pow(bodyA.velocity.y - bodyB.velocity.y, 2)
+                );
+
+                // Calculate size for pitch adjustment
+                // Use the average width of the colliding bodies if they are characters
+                let collisionSize = 100;
+                const widthA = bodyA.bounds.max.x - bodyA.bounds.min.x;
+                const widthB = bodyB.bounds.max.x - bodyB.bounds.min.x;
+
+                if (isALetter && isBLetter) {
+                    collisionSize = (widthA + widthB) / 2;
+                } else if (isALetter) {
+                    collisionSize = widthA;
+                } else {
+                    collisionSize = widthB;
+                }
+
+                sounds.playCollision(speed, collisionSize);
+            }
+        });
+    });
 }
 
 // Create screen boundaries
@@ -109,30 +210,37 @@ function createHangingText(text) {
     const screenHeight = window.innerHeight;
 
     // Mobile base: 15.38 * 1.2 = 18.46vw. Desktop min: 9.04vw.
-    // Reduction factor for desktop (recalculated for 140% of previous state).
+    // Increased by 40%: 18.46 * 1.4 = 25.84
+    // Reduced by 10% as per user request: 25.84 * 0.9 = 23.256
     const reductionFactor = Math.max(0.49, 1 - Math.max(0, screenWidth - 600) / 1400 * 0.51);
-    const baseFontSizeVw = 18.46 * reductionFactor;
+    const baseFontSizeVw = 23.256 * reductionFactor;
 
     // Dynamic spacing ratio: 0.072em (MO) -> 0.084em (PC)
     const spacingRatio = 0.072 + Math.max(0, screenWidth - 600) / 1400 * 0.012;
 
-    const lengthFactor = 1 / (1 + Math.max(0, chars.length - 10) * 0.05);
-    const fontSizeVw = Math.max(baseFontSizeVw * lengthFactor, 5);
+    // Shrink text as it gets longer. Start shrinking after 1st character.
+    const lengthFactor = 1 / (1 + Math.max(0, chars.length - 1) * 0.04);
+    let fontSizeVw = Math.max(baseFontSizeVw * lengthFactor, 3.15); // Reduced by 30% from 4.5
+
+    // Reduce size by 10% specifically on mobile
+    if (screenWidth < 768) {
+        fontSizeVw *= 0.9;
+    }
     const fontSize = (fontSizeVw * screenWidth) / 100; // Convert to pixels for physics internal calc
 
     const charHeight = fontSize * 0.85; // Tighter height for better stacking
     const textAreaPadding = screenWidth * TEXT_AREA_PADDING;
     const textAreaWidth = screenWidth - (textAreaPadding * 2);
-    const lineHeight = charHeight + 110;
+    const lineHeight = charHeight + 65; // Reduced from 110
 
     const lines = calculateLines(chars, fontSize, textAreaWidth, spacingRatio);
     const totalHeight = lines.length * lineHeight;
-    const startY = Math.max(ROPE_Y + charHeight + 20, (screenHeight - totalHeight) / 3.5);
+    const startY = Math.max(ROPE_Y + charHeight + 10, (screenHeight - totalHeight) / 3.5);
 
     lines.forEach((lineChars, lineIndex) => {
         const totalLineWidth = lineChars.reduce((sum, char) => sum + getCharWidth(char, fontSize, spacingRatio), 0);
         let currentX = (screenWidth - totalLineWidth) / 2;
-        const ropeY = startY + lineIndex * lineHeight - 50;
+        const ropeY = startY + lineIndex * lineHeight - 35;
 
         const ropeBody = Bodies.rectangle(screenWidth / 2, ropeY, screenWidth, 10, {
             isStatic: true,
@@ -144,7 +252,7 @@ function createHangingText(text) {
         lineChars.forEach((char) => {
             const charWidth = getCharWidth(char, fontSize, spacingRatio);
             const x = currentX + charWidth / 2;
-            const y = ropeY + charHeight + 50;
+            const y = ropeY + charHeight + 35;
 
             currentX += charWidth;
 
@@ -183,7 +291,7 @@ function createHangingText(text) {
                 pointB: { x: 0, y: -charHeight / 2 },
                 stiffness: STIFFNESS,
                 damping: DAMPING,
-                length: 50, // Added length for "hanging" sway
+                length: 35, // Reduced from 50
                 render: { visible: false }
             });
             World.add(world, constraint);
@@ -340,6 +448,16 @@ function init() {
     initMouse();
     animate();
 
+    const resumeAudio = () => {
+        sounds.init();
+        document.removeEventListener('mousedown', resumeAudio);
+        document.removeEventListener('keydown', resumeAudio);
+        document.removeEventListener('touchstart', resumeAudio);
+    };
+    document.addEventListener('mousedown', resumeAudio);
+    document.addEventListener('keydown', resumeAudio);
+    document.addEventListener('touchstart', resumeAudio);
+
     const input = document.getElementById('text-input');
     const resetBtn = document.getElementById('reset-btn');
     const submitBtn = document.getElementById('submit-btn');
@@ -373,6 +491,10 @@ function init() {
     submitBtn.addEventListener('click', handleSubmit);
     resetBtn.addEventListener('click', deleteWithFlutter);
 
+    document.getElementById('sound-toggle-btn').addEventListener('click', () => {
+        sounds.toggleMute();
+    });
+
     fullResetBtn.addEventListener('click', () => {
         // Clear everything
         clearCharacters();
@@ -388,29 +510,50 @@ function init() {
     input.focus();
 
     createHangingText('Laundry');
-    setInterval(applyWindEffect, 2000);
+    scheduleNextWind();
 }
 
-function applyWindEffect() {
+function scheduleNextWind() {
+    // Fixed gap between wind bursts: 1s
+    const gap = 1000;
+
+    setTimeout(() => {
+        applyWindEffect(() => {
+            scheduleNextWind();
+        });
+    }, gap);
+}
+
+function applyWindEffect(onComplete) {
     const bodies = [...charBodies, ...fallenBodies];
-    if (bodies.length === 0) return;
+    if (bodies.length === 0) {
+        if (onComplete) onComplete();
+        return;
+    }
+
+    // Random duration between 0.7s and 3s
+    const durationMs = 700 + Math.random() * 2300;
+    const totalFrames = Math.floor(durationMs / 16.66); // approx 60fps
+
     let frames = 0;
-    const duration = 60;
     const baseForceX = 0.00245;
     const direction = Math.random() > 0.5 ? 1 : -1;
-    // Max intensity reduced by 50% (previous max multiplier was 3.0, new max is 1.5)
     const randomMultiplier = 0.5 + Math.random() * 1.0;
     const forceX = baseForceX * randomMultiplier * direction;
 
     const windAnimation = () => {
         bodies.forEach(body => {
             Body.applyForce(body, body.position, {
-                x: forceX + (Math.random() - 0.5) * 0.006, // Increased turbulence
-                y: (Math.random() - 0.5) * 0.004 // Increased vertical flutter
+                x: forceX + (Math.random() - 0.5) * 0.006, // Turbulence
+                y: (Math.random() - 0.5) * 0.004 // Vertical flutter
             });
         });
         frames++;
-        if (frames < duration) requestAnimationFrame(windAnimation);
+        if (frames < totalFrames) {
+            requestAnimationFrame(windAnimation);
+        } else {
+            if (onComplete) onComplete();
+        }
     };
     windAnimation();
 }
