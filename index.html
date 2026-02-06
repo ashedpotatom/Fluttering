@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hanging Text Physics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Noto+Sans+KR:wght@900&family=Roboto&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <img src="logo.svg" id="logo" alt="Logo">
+    <div id="text-container"></div>
+
+    <div id="controls-container">
+        <button id="full-reset-btn" class="icon-btn" title="Full Reset">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+        </button>
+
+        <div class="input-wrapper">
+            <textarea id="text-input" placeholder="Enter text..." autocomplete="off" rows="1"></textarea>
+            <button id="submit-btn" class="submit-icon" title="Submit">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </button>
+        </div>
+
+        <button id="reset-btn" class="icon-btn" title="Drop All">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+        </button>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
